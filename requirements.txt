@@ -1,4 +1,4 @@
 torchtext==0.4.0
 tensorboard
-ray[tune]
 gensim==3.6.0
+torchmetrics
