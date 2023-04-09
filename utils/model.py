@@ -88,7 +88,7 @@ class EncoderLSTM(nn.Module):
 
         if self.is_bidirectional: # only for GRU decoder
             hidden = hidden[0]
-            hidden = torch.cat((hidden[-2, :, :], hidden[-1, :, :]), dim=1)
+            hidden = torch.cat((hidden[-2, :, :], hidden[-1, :, :]), dim=0)
 
         return output, hidden
 

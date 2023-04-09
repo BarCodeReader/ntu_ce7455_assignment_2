@@ -120,6 +120,7 @@ def train(
     criterion,
     device,
     max_length=MAX_LENGTH,
+    is_bidirectional=False
 ):
     encoder_hidden = encoder.initHidden()
 
@@ -134,7 +135,11 @@ def train(
     loss = 0
 
     for ei in range(input_length):
-        encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
+        if is_bidirectional:
+            input = torch.cat(input_tensor[ei], input_tensor[input_length-1-ei])
+        else:
+            input = input_tensor[ei]
+        encoder_output, encoder_hidden = encoder(input, encoder_hidden)
         encoder_outputs[ei] = encoder_output[0, 0]
 
     decoder_input = torch.tensor([[SOS_token]], device=device)
