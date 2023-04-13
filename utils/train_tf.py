@@ -7,11 +7,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
-
+from .model import  generate_square_subsequent_mask
 from .constants import *
 
 teacher_forcing_ratio = 0.5
-
 
 def indexesFromSentence(lang, sentence):
     return [lang.word2index[word] for word in sentence.split(" ")]
@@ -29,100 +28,18 @@ def tensorsFromPair(input_lang, output_lang, pair, device):
     return (input_tensor, target_tensor)
 
 
-def auto_regressive_beam_search(
-    decoder_model, start_tokens, beam_width, max_len, alpha
-):
-    end_token = -1
-    num_states = len(decoder_model.init_states(1))
-    batch_size = start_tokens.shape[0]
-
-    # Initialize the beams
-    beams = [
-        {
-            "tokens": start_tokens,
-            "log_prob": 0.0,
-            "states": decoder_model.init_states(batch_size),
-        }
-    ]
-
-    for i in range(max_len):
-        # Generate the next set of candidates for each beam
-        candidates = []
-        for beam in beams:
-            # Get the current token and states for the beam
-            token = beam["tokens"][:, -1:]
-            states = beam["states"]
-
-            # Predict the log probabilities for the next token and update the states
-            logits, new_states = decoder_model(token, states)
-            log_probs = F.log_softmax(logits.squeeze(1), dim=-1)
-            new_states = (new_states[0].detach(), new_states[1].detach())
-
-            # Add the new candidates to the list
-            for j in range(beam_width):
-                candidate = {
-                    "tokens": torch.cat(
-                        [
-                            beam["tokens"],
-                            torch.zeros((batch_size, 1), dtype=torch.long),
-                        ],
-                        dim=-1,
-                    ),
-                    "log_prob": beam["log_prob"] + log_probs[:, j],
-                    "states": new_states,
-                }
-                candidates.append(candidate)
-
-        # Keep the top k candidates based on their log probabilities
-        candidates = sorted(candidates, key=lambda x: x["log_prob"], reverse=True)[
-            :beam_width
-        ]
-        beams = []
-
-        # Check if any of the beams have reached the end token
-        for candidate in candidates:
-            if candidate["tokens"][:, -1] == end_token:
-                beams.append(candidate)
-            else:
-                beams.append(
-                    {
-                        "tokens": candidate["tokens"],
-                        "log_prob": candidate["log_prob"],
-                        "states": candidate["states"],
-                    }
-                )
-
-        # If all the beams have reached the end token, stop searching
-        if all([beam["tokens"][:, -1] == end_token for beam in beams]):
-            break
-
-    # Choose the beam with the highest log probability
-    beam = max(beams, key=lambda x: x["log_prob"])
-    tokens = beam["tokens"]
-
-    # Apply length normalization
-    if alpha != 1.0:
-        length = torch.pow(torch.tensor(tokens.shape[1], dtype=torch.float32), alpha)
-        log_probs = beam["log_prob"] / length
-    else:
-        log_probs = beam["log_prob"]
-
-    return tokens, log_probs
-
-
 def train(
-    input_tensor,
-    target_tensor,
-    encoder,
-    decoder,
-    encoder_optimizer,
-    decoder_optimizer,
-    criterion,
-    device,
-    max_length=MAX_LENGTH,
-    is_bidirectional=False
-):
-    encoder_hidden = encoder.initHidden()
+        input_tensor,
+        target_tensor,
+        encoder,
+        decoder,
+        encoder_optimizer,
+        decoder_optimizer,
+        criterion,
+        device,
+        max_length=MAX_LENGTH):
+
+    #encoder_hidden = encoder.initHidden()
 
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
@@ -130,41 +47,34 @@ def train(
     input_length = input_tensor.size(0)
     target_length = target_tensor.size(0)
 
-    if is_bidirectional:
-        encoder_outputs = torch.zeros(max_length, encoder.hidden_size*2, device=device)
-    else:
-        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+    encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
     loss = 0
+    src_mask = generate_square_subsequent_mask(MAX_LENGTH).to(device)
+    if input_length != MAX_LENGTH:
+        src_mask = src_mask[:input_length, :input_length]
 
+    encoder_output = encoder(input_tensor, src_mask) # torch.Size([8, 1, 512])
     for ei in range(input_length):
-        '''
-        if is_bidirectional:
-            input = torch.cat(input_tensor[ei], input_tensor[input_length-1-ei])
-        else:
-            input = input_tensor[ei]
-        '''
-        input = input_tensor[ei]
-        encoder_output, encoder_hidden = encoder(input, encoder_hidden)
-        encoder_outputs[ei] = encoder_output[0, 0]
+        encoder_outputs[ei] = encoder_output[ei][0]
 
     decoder_input = torch.tensor([[SOS_token]], device=device)
 
-    decoder_hidden = encoder_hidden  # last token's hidden
+    decoder_hidden = decoder.initHidden()
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
+            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden, encoder_outputs)
             loss += criterion(decoder_output, target_tensor[di])
             decoder_input = target_tensor[di]  # Teacher forcing
 
     else:
         # Without teacher forcing: use its own predictions as the next input
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
+            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden, encoder_outputs)
             topv, topi = decoder_output.topk(1)
             decoder_input = topi.squeeze().detach()  # detach from history as input
 
@@ -192,8 +102,7 @@ def trainIters(
     output_lang,
     print_every=1000,
     plot_every=100,
-    learning_rate=0.01,
-    is_bidirectional=False
+    learning_rate=0.01
 ):
     tensorboard_writter = SummaryWriter(tensorboard_log_dir)
     start = time.time()
@@ -227,8 +136,7 @@ def trainIters(
                 encoder_optimizer,
                 decoder_optimizer,
                 criterion,
-                device=device,
-                is_bidirectional=is_bidirectional
+                device
             )
             print_loss_total += loss
             plot_loss_total += loss

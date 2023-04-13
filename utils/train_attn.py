@@ -12,7 +12,6 @@ from .constants import *
 
 teacher_forcing_ratio = 0.5
 
-
 def indexesFromSentence(lang, sentence):
     return [lang.word2index[word] for word in sentence.split(" ")]
 
@@ -111,17 +110,15 @@ def auto_regressive_beam_search(
 
 
 def train(
-    input_tensor,
-    target_tensor,
-    encoder,
-    decoder,
-    encoder_optimizer,
-    decoder_optimizer,
-    criterion,
-    device,
-    max_length=MAX_LENGTH,
-    is_bidirectional=False
-):
+        input_tensor,
+        target_tensor,
+        encoder,
+        decoder,
+        encoder_optimizer,
+        decoder_optimizer,
+        criterion,
+        device,
+        max_length=MAX_LENGTH):
     encoder_hidden = encoder.initHidden()
 
     encoder_optimizer.zero_grad()
@@ -130,41 +127,36 @@ def train(
     input_length = input_tensor.size(0)
     target_length = target_tensor.size(0)
 
-    if is_bidirectional:
-        encoder_outputs = torch.zeros(max_length, encoder.hidden_size*2, device=device)
-    else:
-        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+    encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
     loss = 0
 
     for ei in range(input_length):
-        '''
-        if is_bidirectional:
-            input = torch.cat(input_tensor[ei], input_tensor[input_length-1-ei])
-        else:
-            input = input_tensor[ei]
-        '''
-        input = input_tensor[ei]
-        encoder_output, encoder_hidden = encoder(input, encoder_hidden)
+        encoder_output, encoder_hidden = encoder(
+            input_tensor[ei], encoder_hidden)
+        # print(encoder_output.shape)
+        # torch.Size([1, 1, 512])
         encoder_outputs[ei] = encoder_output[0, 0]
 
     decoder_input = torch.tensor([[SOS_token]], device=device)
 
-    decoder_hidden = encoder_hidden  # last token's hidden
+    decoder_hidden = encoder_hidden
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
+            decoder_output, decoder_hidden = decoder(
+                decoder_input, decoder_hidden, encoder_outputs)
             loss += criterion(decoder_output, target_tensor[di])
             decoder_input = target_tensor[di]  # Teacher forcing
 
     else:
         # Without teacher forcing: use its own predictions as the next input
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
+            decoder_output, decoder_hidden = decoder(
+                decoder_input, decoder_hidden, encoder_outputs)
             topv, topi = decoder_output.topk(1)
             decoder_input = topi.squeeze().detach()  # detach from history as input
 
@@ -192,8 +184,7 @@ def trainIters(
     output_lang,
     print_every=1000,
     plot_every=100,
-    learning_rate=0.01,
-    is_bidirectional=False
+    learning_rate=0.01
 ):
     tensorboard_writter = SummaryWriter(tensorboard_log_dir)
     start = time.time()
@@ -227,8 +218,7 @@ def trainIters(
                 encoder_optimizer,
                 decoder_optimizer,
                 criterion,
-                device=device,
-                is_bidirectional=is_bidirectional
+                device
             )
             print_loss_total += loss
             plot_loss_total += loss

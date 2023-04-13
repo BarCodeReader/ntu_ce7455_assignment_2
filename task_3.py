@@ -5,9 +5,9 @@ from sklearn.model_selection import train_test_split
 
 from utils.constants import *
 from utils.data import *
-from utils.model import DecoderLSTM, EncoderLSTM
-from utils.test import evaluateRandomly, test
-from utils.train import trainIters
+from utils.model import AttnDecoderRNN, EncoderRNN
+from utils.test_attn import evaluateRandomly, test
+from utils.train_attn import trainIters
 from utils.utils import register_logger
 
 
@@ -29,24 +29,23 @@ def tensorsFromPair(pair):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_type", type=str, default="lstm")
     parser.add_argument("--hidden_size", type=int, default=512)
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--print_every", type=int, default=5000)
     parser.add_argument("--lr", type=float, default=1e-2)
-    parser.add_argument("--tensorboard_dir", type=str, default="tb_logs/t2/gru")
+    parser.add_argument("--tensorboard_dir", type=str, default="tb_logs/t3/gru")
 
     opt = parser.parse_args()
     print(opt)
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
-    logger = register_logger("experiments_logs/task_2.log")
+    logger = register_logger("experiments_logs/task_3.log")
 
-    with open("experiments_logs/task_2.log", "a+") as file:
+    with open("experiments_logs/task_3.log", "a+") as file:
         file.write("\n-------------------------------------------\n")
 
     logger.info(
-        f"Starting the experiment for task 2 for {opt.model_type} with {opt.epochs} epochs,"
+        f"Starting the experiment for task 3 with {opt.epochs} epochs,"
         + f" the hidden_size is {opt.hidden_size}, lr: {opt.lr}"
     )
     input_lang, output_lang, pairs = prepareData("eng", "fra", True)
@@ -61,14 +60,8 @@ if __name__ == "__main__":
     train_pairs = list(zip(X_train, y_train))
     test_pairs = list(zip(X_test, y_test))
 
-    if opt.model_type.lower() == "lstm":
-        is_bidirectional = False
-        encoder1 = EncoderLSTM(input_lang.n_words, opt.hidden_size, device, is_bidirectional=is_bidirectional).to(device)
-        decoder1 = DecoderLSTM(opt.hidden_size, output_lang.n_words, device, is_bidirectional=is_bidirectional).to(device)
-    else:
-        is_bidirectional = True
-        encoder1 = EncoderLSTM(input_lang.n_words, opt.hidden_size, device, num_layers=1, is_bidirectional=is_bidirectional).to(device)
-        decoder1 = DecoderLSTM(opt.hidden_size, output_lang.n_words, device, num_layers=1, is_bidirectional=is_bidirectional).to(device)
+    encoder1 = EncoderRNN(input_lang.n_words, opt.hidden_size, device).to(device)
+    decoder1 = AttnDecoderRNN(opt.hidden_size, output_lang.n_words, device).to(device)
 
     logger.info("Training")
     trainIters(
@@ -82,12 +75,11 @@ if __name__ == "__main__":
         input_lang=input_lang,
         output_lang=output_lang,
         print_every=opt.print_every,
-        learning_rate=opt.lr,
-        is_bidirectional=is_bidirectional
+        learning_rate=opt.lr
     )
 
-    torch.save(encoder1.state_dict(), f"models/task_2/encoder_{opt.model_type}.pt")
-    torch.save(decoder1.state_dict(), f"models/task_2/decode_{opt.model_type}r.pt")
+    torch.save(encoder1.state_dict(), f"models/task_3/encoder.pt")
+    torch.save(decoder1.state_dict(), f"models/task_3/decoder.pt")
     logger.info("Testing")
     evaluateRandomly(
         encoder1,
@@ -96,8 +88,7 @@ if __name__ == "__main__":
         device=device,
         input_lang=input_lang,
         output_lang=output_lang,
-        logger=logger,
-        is_bidirectional=is_bidirectional
+        logger=logger
     )
     print('---------------training pair eval result')
     input, gt, predict, score = test(
@@ -107,8 +98,7 @@ if __name__ == "__main__":
         device=device,
         input_lang=input_lang,
         output_lang=output_lang,
-        logger=logger,
-        is_bidirectional=is_bidirectional
+        logger=logger
     )
     print('---------------testing pair eval result')
     input, gt, predict, score = test(
@@ -118,6 +108,5 @@ if __name__ == "__main__":
         device=device,
         input_lang=input_lang,
         output_lang=output_lang,
-        logger=logger,
-        is_bidirectional=is_bidirectional
+        logger=logger
     )

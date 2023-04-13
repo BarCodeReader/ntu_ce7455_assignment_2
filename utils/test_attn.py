@@ -17,18 +17,14 @@ def evaluate(
     device,
     input_lang,
     output_lang,
-    max_length=MAX_LENGTH,
-    is_bidirectional=False
+    max_length=MAX_LENGTH
 ):
     with torch.no_grad():
         input_tensor = tensorFromSentence(input_lang, sentence, device=device)
         input_length = input_tensor.size()[0]
         encoder_hidden = encoder.initHidden()
 
-        if is_bidirectional:
-            encoder_outputs = torch.zeros(max_length, encoder.hidden_size * 2, device=device)
-        else:
-            encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
         for ei in range(input_length):
             encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
@@ -41,7 +37,7 @@ def evaluate(
         decoded_words = []
 
         for di in range(max_length):
-            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
+            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden, encoder_outputs)
             topv, topi = decoder_output.data.topk(1)
             if topi.item() == EOS_token:
                 decoded_words.append("<EOS>")
@@ -55,7 +51,7 @@ def evaluate(
 
 
 def evaluateRandomly(
-    encoder, decoder, pairs, device, input_lang, output_lang, logger, is_bidirectional, n=10
+    encoder, decoder, pairs, device, input_lang, output_lang, logger, n=10
 ):
     for _ in range(n):
         pair = random.choice(pairs)
@@ -67,14 +63,13 @@ def evaluateRandomly(
             pair[0],
             device,
             input_lang=input_lang,
-            output_lang=output_lang,
-            is_bidirectional=is_bidirectional
+            output_lang=output_lang
         )
         output_sentence = " ".join(output_words)
         logger.info(f"< {output_sentence}")
 
 
-def test(encoder, decoder, testing_pairs, device, input_lang, output_lang, logger, is_bidirectional):
+def test(encoder, decoder, testing_pairs, device, input_lang, output_lang, logger):
     input = []
     gt = []
     predict = []
@@ -96,8 +91,7 @@ def test(encoder, decoder, testing_pairs, device, input_lang, output_lang, logge
             pair[0],
             device,
             input_lang=input_lang,
-            output_lang=output_lang,
-            is_bidirectional=is_bidirectional
+            output_lang=output_lang
         )
         output_sentence = " ".join(output_words)
 

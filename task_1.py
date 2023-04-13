@@ -29,8 +29,8 @@ def tensorsFromPair(pair):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--hidden_size", type=str, default=512)
-    parser.add_argument("--epochs", type=int, default=2)
+    parser.add_argument("--hidden_size", type=int, default=512)
+    parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--print_every", type=int, default=5000)
     parser.add_argument("--lr", type=float, default=1e-2)
     parser.add_argument("--tensorboard_dir", type=str, default="tb_logs/t1/gru")
@@ -87,7 +87,9 @@ if __name__ == "__main__":
         input_lang=input_lang,
         output_lang=output_lang,
         logger=logger,
+        is_bidirectional=False
     )
+    print('---------------training pair eval result')
     input, gt, predict, score = test(
         encoder1,
         decoder1,
@@ -96,4 +98,16 @@ if __name__ == "__main__":
         input_lang=input_lang,
         output_lang=output_lang,
         logger=logger,
+        is_bidirectional=False
+    )
+    print('---------------testing pair eval result')
+    input, gt, predict, score = test(
+        encoder1,
+        decoder1,
+        test_pairs,
+        device=device,
+        input_lang=input_lang,
+        output_lang=output_lang,
+        logger=logger,
+        is_bidirectional=False
     )
